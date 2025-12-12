@@ -36,13 +36,13 @@
       </div>
       <h1 class="album-title" id="album-title">Альбом</h1>
       <p class="album-description" id="album-description">
-        Загрузка данных альбома...
+        Альбом деректері жүктелуде...
       </p>
     </div>
 
     <div class="album-cover-wrap">
       <!-- Обложка подставится из JSON -->
-      <img src="" alt="Обложка альбома" class="album-cover-img" id="album-cover" style="display:none;">
+      <img src="" alt="Альбом мұқабасы" class="album-cover-img" id="album-cover" style="display:none;">
     </div>
   </header>
 
@@ -100,7 +100,7 @@
         localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
       } catch (e) {
         // Если localStorage недоступен, просто молча игнорируем
-        console.log('Не удалось сохранить состояние плеера:', e);
+        console.log('Ойыншы күйін сақтау сәтсіз аяқталды:', e);
       }
     }
 
@@ -112,7 +112,7 @@
         if (typeof state.index !== 'number') return null;
         return state;
       } catch (e) {
-        console.log('Не удалось прочитать состояние плеера:', e);
+        console.log('Ойыншы күйін оқу мүмкін болмады:', e);
         return null;
       }
     }
@@ -136,7 +136,7 @@
 
       audio.src = src;
       nowPlayingTitle.textContent = title;
-      nowPlayingArtist.textContent = artist ? 'Исполнитель: ' + artist : '';
+      nowPlayingArtist.textContent = artist ? 'Орындаушы: ' + artist : '';
       setActive(index);
 
       if (autoplay) {
@@ -144,7 +144,7 @@
         if (playPromise) {
           playPromise.catch((err) => {
             // Браузер может заблокировать автоплей — это нормально
-            console.log('Autoplay заблокирован браузером:', err);
+            console.log('Автоматты ойнату браузер тарапынан бөгелген:', err);
           });
         }
       }
@@ -164,7 +164,7 @@
           <span class="track-title">${track.title}</span>
         </div>
         <div class="track-artist">
-          ${track.artist ? 'Исполнитель: ' + track.artist : ''}
+          ${track.artist ? 'Орындаушы: ' + track.artist : ''}
         </div>
       `;
       return li;
@@ -232,7 +232,7 @@
           attachHandlers();
 
           if (!playlistItems.length) {
-            nowPlayingTitle.textContent = 'Нет треков';
+            nowPlayingTitle.textContent = 'Тректер жоқ';
             return;
           }
 
@@ -265,7 +265,7 @@
             if (playPromise) {
               playPromise.catch((err) => {
                 // Если браузер потребует ручного Play — пользователь просто нажмёт кнопку
-                console.log('Autoplay после восстановления заблокирован:', err);
+                console.log('Қалпына келтірілгеннен кейін автоматты ойнату бұғатталады:', err);
               });
             }
           } else {
@@ -274,8 +274,8 @@
           }
         })
         .catch(err => {
-          console.error('Ошибка загрузки album.json:', err);
-          albumDescEl.textContent = 'Ошибка загрузки данных альбома.';
+          console.error('album.json жүктеу кезінде қате пайда болды:', err);
+          albumDescEl.textContent = 'Альбом деректерін жүктеу қатесі.';
         });
     }
 
