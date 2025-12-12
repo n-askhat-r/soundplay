@@ -239,3 +239,10 @@
 
   document.addEventListener('DOMContentLoaded', loadAlbum);
 })();
+
+/* Запрет правой кнопки */
+document.addEventListener('contextmenu', e => {
+  if (e.target.closest('.album-container')) {
+    e.preventDefault();
+  }
+});
