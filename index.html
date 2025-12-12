@@ -72,6 +72,7 @@
 <script>
   (function () {
     const audio = document.getElementById('audio-player');
+
     const nowPlayingTitle = document.getElementById('now-playing-title');
     const nowPlayingArtist = document.getElementById('now-playing-artist');
     const playlistEl = document.getElementById('playlist');
@@ -81,28 +82,30 @@
     const albumDescEl = document.getElementById('album-description');
     const albumCoverEl = document.getElementById('album-cover');
 
-    // Ключ для localStorage – привязываем к пути, чтобы для разных альбомов были разные сохранения
+    // Обложка как кнопка Play
+    const coverPlay = document.getElementById('cover-play');
+    const playOverlay = document.getElementById('play-overlay');
+
+    // Ключ localStorage (отдельно для каждого пути)
     const STORAGE_KEY = 'albumPlayerState_' + location.pathname;
 
     let playlistItems = [];
     let currentIndex = 0;
 
-    // ====== Работа с localStorage ======
+    // ---------- localStorage ----------
     function saveState() {
       if (!playlistItems.length) return;
 
       const state = {
         index: currentIndex,
-        // currentSrc может быть абсолютным URL, но нам важнее индекс
-        src: playlistItems[currentIndex].dataset.src || '',
-        time: audio.currentTime || 0
+        src: (playlistItems[currentIndex] && playlistItems[currentIndex].dataset.src) ? playlistItems[currentIndex].dataset.src : '',
+        time: (typeof audio.currentTime === 'number' && isFinite(audio.currentTime)) ? audio.currentTime : 0
       };
 
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
       } catch (e) {
-        // Если localStorage недоступен, просто молча игнорируем
-        console.log('Ойыншы күйін сақтау сәтсіз аяқталды:', e);
+        // ignore
       }
     }
 
@@ -110,51 +113,66 @@
       try {
         const raw = localStorage.getItem(STORAGE_KEY);
         if (!raw) return null;
-        const state = JSON.parse(raw);
-        if (typeof state.index !== 'number') return null;
-        return state;
+        const st = JSON.parse(raw);
+        if (!st || typeof st.index !== 'number') return null;
+        return st;
       } catch (e) {
-        console.log('Ойыншы күйін оқу мүмкін болмады:', e);
         return null;
       }
     }
 
-    // ====== Вспомогательные функции ======
+    // ---------- UI helpers ----------
     function setActive(index) {
-      playlistItems.forEach((item, i) => {
-        item.classList.toggle('active', i === index);
-      });
+      playlistItems.forEach((item, i) => item.classList.toggle('active', i === index));
     }
 
-    function loadTrack(index, autoplay = false) {
+    function updateNowPlayingFromItem(item) {
+      const titleEl = item.querySelector('.track-title');
+      const title = titleEl ? titleEl.textContent.trim() : '—';
+      const artist = item.dataset.artist || '';
+
+      nowPlayingTitle.textContent = title;
+      nowPlayingArtist.textContent = artist ? ('Исполнитель: ' + artist) : '';
+    }
+
+    function safePlay() {
+      const p = audio.play();
+      if (p && typeof p.catch === 'function') p.catch(() => {});
+    }
+
+    function safePause() {
+      try { audio.pause(); } catch (e) {}
+    }
+
+    function setOverlayVisible(visible) {
+      if (!playOverlay) return;
+      if (visible) playOverlay.classList.remove('hidden');
+      else playOverlay.classList.add('hidden');
+    }
+
+    // ---------- Track loading ----------
+    function loadTrack(index, autoplay) {
       if (index < 0 || index >= playlistItems.length) return;
 
       currentIndex = index;
       const item = playlistItems[index];
       const src = item.dataset.src;
-      const artist = item.dataset.artist || '';
-      const titleEl = item.querySelector('.track-title');
-      const title = titleEl ? titleEl.textContent.trim() : '—';
+
+      if (!src) return;
 
       audio.src = src;
-      nowPlayingTitle.textContent = title;
-      nowPlayingArtist.textContent = artist ? 'Орындаушы: ' + artist : '';
+      updateNowPlayingFromItem(item);
       setActive(index);
 
-      if (autoplay) {
-        const playPromise = audio.play();
-        if (playPromise) {
-          playPromise.catch((err) => {
-            // Браузер может заблокировать автоплей — это нормально
-            console.log('Автоматты ойнату браузер тарапынан бөгелген:', err);
-          });
-        }
-      }
-
-      // сразу сохраняем состояние при смене трека
+      // Сохраняем сразу при смене трека
       saveState();
+
+      if (autoplay) {
+        safePlay();
+      }
     }
 
+    // ---------- Build playlist ----------
     function buildTrack(track, index) {
       const li = document.createElement('li');
       li.dataset.src = track.src;
@@ -163,137 +181,179 @@
       li.innerHTML = `
         <div class="track-row">
           <span class="track-number">${index + 1}</span>
-          <span class="track-title">${track.title}</span>
+          <span class="track-title">${track.title || ('Трек ' + (index + 1))}</span>
         </div>
-        <div class="track-artist">
-          ${track.artist ? 'Орындаушы: ' + track.artist : ''}
-        </div>
+        <div class="track-artist">${track.artist ? ('Исполнитель: ' + track.artist) : ''}</div>
       `;
       return li;
     }
 
-    function attachHandlers() {
+    function attachPlaylistHandlers() {
       playlistItems.forEach((item, index) => {
         item.addEventListener('click', () => loadTrack(index, true));
       });
-
-      // Сохраняем позицию по ходу проигрывания
-      audio.addEventListener('timeupdate', () => {
-        // сохраняем не на каждый миллисекундный вызов, а немного реже
-        // но для простоты можно сохранять всегда – нагрузка минимальная
-        saveState();
-      });
-
-      // На паузе тоже сохраняем
-      audio.addEventListener('pause', saveState);
-
-      // Перед закрытием страницы
-      window.addEventListener('beforeunload', saveState);
     }
 
+    // ---------- Album meta ----------
     function applyAlbumMeta(album) {
-      if (album.title) {
-        albumTitleEl.textContent = album.title;
-        document.title = album.title;
-      }
-      if (album.author) {
-        albumAuthorEl.textContent = album.author;
-      }
-      if (album.description) {
-        albumDescEl.textContent = album.description;
-      } else {
-        albumDescEl.textContent = '';
-      }
-      if (album.cover) {
+      const title = album && album.title ? String(album.title) : 'Альбом';
+      const author = album && album.author ? String(album.author) : '—';
+      const desc = album && album.description ? String(album.description) : '';
+
+      albumTitleEl.textContent = title;
+      albumAuthorEl.textContent = author;
+      albumDescEl.textContent = desc;
+      document.title = title;
+
+      if (album && album.cover) {
         albumCoverEl.src = album.cover;
         albumCoverEl.style.display = 'block';
       } else {
         albumCoverEl.style.display = 'none';
       }
+
+      // по умолчанию показываем треугольник (если не играет)
+      setOverlayVisible(audio.paused);
     }
 
+    // ---------- Restore position ----------
+    function restoreSavedPlayback(saved) {
+      if (!saved) return false;
+
+      let idx = saved.index;
+      if (!isFinite(idx) || idx < 0 || idx >= playlistItems.length) idx = 0;
+
+      // Загружаем трек БЕЗ autoplay, выставим время после loadedmetadata
+      loadTrack(idx, false);
+
+      const seekTime = (typeof saved.time === 'number' && isFinite(saved.time) && saved.time > 0) ? saved.time : 0;
+      if (seekTime > 0) {
+        const onMeta = () => {
+          // если duration известна — подрежем время
+          if (isFinite(audio.duration) && audio.duration > 0) {
+            audio.currentTime = Math.min(seekTime, Math.max(audio.duration - 0.25, 0));
+          } else {
+            audio.currentTime = seekTime;
+          }
+          audio.removeEventListener('loadedmetadata', onMeta);
+        };
+        audio.addEventListener('loadedmetadata', onMeta);
+      }
+
+      // Автоплей попробуем, но браузер может заблокировать. Это ок — пользователь нажмёт на обложку.
+      safePlay();
+      return true;
+    }
+
+    // ---------- Events ----------
+    // Конец трека -> следующий
+    audio.addEventListener('ended', () => {
+      const next = currentIndex + 1;
+      if (next < playlistItems.length) {
+        loadTrack(next, true);
+      } else {
+        // Можно зациклить:
+        // loadTrack(0, true);
+        saveState();
+        setOverlayVisible(true);
+      }
+    });
+
+    // Сохранение позиции (не слишком часто)
+    let lastSaveTs = 0;
+    audio.addEventListener('timeupdate', () => {
+      const now = Date.now();
+      if (now - lastSaveTs > 1200) { // примерно раз в 1.2 сек
+        saveState();
+        lastSaveTs = now;
+      }
+    });
+
+    audio.addEventListener('pause', () => {
+      saveState();
+      setOverlayVisible(true);
+    });
+
+    audio.addEventListener('play', () => {
+      setOverlayVisible(false);
+    });
+
+    window.addEventListener('beforeunload', saveState);
+
+    // Обложка: play/pause по клику
+    if (coverPlay) {
+      coverPlay.addEventListener('click', () => {
+        if (!playlistItems.length) return;
+
+        // Если src ещё не установлен (например, пока грузится JSON), попробуем поставить первый трек
+        if (!audio.src || audio.src === '') {
+          loadTrack(0, true);
+          return;
+        }
+
+        if (audio.paused) safePlay();
+        else safePause();
+      });
+    }
+
+    // ---------- Load album.json ----------
     function loadAlbum() {
-      fetch('album.json')
-        .then(res => {
+      fetch('album.json', { cache: 'no-store' })
+        .then(async (res) => {
+          const text = await res.text();
           if (!res.ok) throw new Error('HTTP ' + res.status);
-          return res.json();
+          try {
+            return JSON.parse(text);
+          } catch (e) {
+            throw new Error('album.json не является JSON (возможно, 404/HTML вместо JSON)');
+          }
         })
-        .then(data => {
-          const album = data.album || {};
-          const tracks = Array.isArray(data.tracks) ? data.tracks : [];
+        .then((data) => {
+          const album = data && data.album ? data.album : {};
+          const tracks = Array.isArray(data && data.tracks ? data.tracks : []) ? data.tracks : [];
 
           applyAlbumMeta(album);
 
           playlistEl.innerHTML = '';
-          tracks.forEach((track, i) => {
-            if (!track.src) return;
-            playlistEl.appendChild(buildTrack(track, i));
+          tracks.forEach((t, i) => {
+            if (!t || !t.src) return;
+            playlistEl.appendChild(buildTrack(t, i));
           });
 
-          playlistItems = Array.from(playlistEl.querySelectorAll('li'));
-          attachHandlers();
+          playlistItems = Array.from(playlistEl.querySelectorAll('li[data-src]'));
+          attachPlaylistHandlers();
 
           if (!playlistItems.length) {
-            nowPlayingTitle.textContent = 'Тректер жоқ';
+            nowPlayingTitle.textContent = 'Нет треков';
+            nowPlayingArtist.textContent = '';
+            setOverlayVisible(true);
             return;
           }
 
-          // Пытаемся восстановить состояние
+          // Восстановление состояния (трек+позиция)
           const saved = loadSavedState();
-          if (saved) {
-            let index = saved.index;
-            if (index < 0 || index >= playlistItems.length) index = 0;
+          const restored = restoreSavedPlayback(saved);
 
-            // Загружаем трек без автоплея (пока)
-            loadTrack(index, false);
-
-            // Восстанавливаем позицию после загрузки метаданных
-            const seekTime = saved.time || 0;
-            if (seekTime > 0) {
-              const setTime = () => {
-                // На случай, если длительность меньше сохранённого времени
-                if (!isNaN(audio.duration) && seekTime > audio.duration) {
-                  audio.currentTime = Math.max(audio.duration - 1, 0);
-                } else {
-                  audio.currentTime = seekTime;
-                }
-                audio.removeEventListener('loadedmetadata', setTime);
-              };
-              audio.addEventListener('loadedmetadata', setTime);
-            }
-
-            // Пробуем автоматически продолжить воспроизведение
-            const playPromise = audio.play();
-            if (playPromise) {
-              playPromise.catch((err) => {
-                // Если браузер потребует ручного Play — пользователь просто нажмёт кнопку
-                console.log('Қалпына келтірілгеннен кейін автоматты ойнату бұғатталады:', err);
-              });
-            }
-          } else {
-            // Если сохранённого состояния нет — начинаем с первого трека
+          // Если нечего восстанавливать — ставим первый трек, autoplay пробуем
+          if (!restored) {
             loadTrack(0, true);
           }
         })
-        .catch(err => {
-          console.error('album.json жүктеу кезінде қате пайда болды:', err);
-          albumDescEl.textContent = 'Альбом деректерін жүктеу қатесі.';
+        .catch((err) => {
+          console.error('Ошибка загрузки данных альбома:', err);
+          albumDescEl.textContent = 'Ошибка загрузки данных альбома.';
+          nowPlayingTitle.textContent = 'Ошибка';
+          nowPlayingArtist.textContent = '';
+          setOverlayVisible(true);
         });
     }
 
-    // Когда трек заканчивается — сохраняем и переходим к следующему
-    audio.addEventListener('ended', () => {
-      if (currentIndex + 1 < playlistItems.length) {
-        loadTrack(currentIndex + 1, true);
-      } else {
-        // В конце плейлиста можно сохранить, что мы на последнем треке в конце
-        saveState();
-      }
+    document.addEventListener('DOMContentLoaded', () => {
+      // До загрузки данных пусть треугольник виден (если есть обложка)
+      setOverlayVisible(true);
+      loadAlbum();
     });
-
-    document.addEventListener('DOMContentLoaded', loadAlbum);
   })();
 </script>
-
 </body>
 </html>
