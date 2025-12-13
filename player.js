@@ -1,13 +1,61 @@
 (function () {
-    // ===== Парольный экран (простая защита) =====
-  const BOOK_PASSWORD = '1234'; // <-- пароль из книги
-  const SESSION_KEY = 'songbook_authed_' + location.pathname;
+  // ===== Парольный экран (пароль из album.json) + лимит попыток + Android-friendly ввод =====
+  const AUTH_KEY = 'songbook_authed_' + location.pathname;
+
+  // Лимит попыток и блокировка
+  const MAX_ATTEMPTS = 5;
+  const LOCK_MINUTES = 10;
+
+  // Ключи для хранения попыток/блокировки (на этом устройстве)
+  const ATTEMPTS_KEY = 'songbook_attempts_' + location.pathname;
+  const LOCK_UNTIL_KEY = 'songbook_lockuntil_' + location.pathname;
+
+  let REQUIRED_PASSWORD = null;
+
+  function nowMs() { return Date.now(); }
+
+  function getAttempts() {
+    const n = parseInt(localStorage.getItem(ATTEMPTS_KEY) || '0', 10);
+    return Number.isFinite(n) ? n : 0;
+    }
+
+  function setAttempts(n) {
+    localStorage.setItem(ATTEMPTS_KEY, String(n));
+  }
+
+  function getLockUntil() {
+    const t = parseInt(localStorage.getItem(LOCK_UNTIL_KEY) || '0', 10);
+    return Number.isFinite(t) ? t : 0;
+  }
+
+  function setLockUntil(ts) {
+    localStorage.setItem(LOCK_UNTIL_KEY, String(ts));
+  }
+
+  function clearAttemptsAndLock() {
+    localStorage.removeItem(ATTEMPTS_KEY);
+    localStorage.removeItem(LOCK_UNTIL_KEY);
+  }
+
+  function formatRemaining(ms) {
+    const s = Math.ceil(ms / 1000);
+    const m = Math.floor(s / 60);
+    const r = s % 60;
+    if (m <= 0) return `${r} сек`;
+    return `${m} мин ${r} сек`;
+  }
 
   function showPasswordGate() {
-    // если уже вводили пароль в этой вкладке/сессии — пропускаем
-    if (sessionStorage.getItem(SESSION_KEY) === '1') return true;
+    // если пароль не задан — пропускаем
+    if (!REQUIRED_PASSWORD) return true;
 
-    // создаём простой оверлей
+    // если уже вводили пароль ранее — пропускаем
+    if (localStorage.getItem(AUTH_KEY) === '1') return true;
+
+    // проверяем блокировку
+    const lockUntil = getLockUntil();
+    const locked = lockUntil > nowMs();
+
     const gate = document.createElement('div');
     gate.style.cssText = `
       position: fixed; inset: 0; z-index: 99999;
@@ -21,23 +69,40 @@
         padding: 16px; box-shadow: 0 10px 30px rgba(0,0,0,.35);
         font-family: system-ui, -apple-system, Segoe UI, sans-serif;
       ">
-        <div style="font-weight: 700; font-size: 18px; margin-bottom: 8px;">Доступ по паролю</div>
-        <div style="color:#555; font-size: 14px; margin-bottom: 12px;">
+        <div style="font-weight:700; font-size:18px; margin-bottom:8px;">Доступ по паролю</div>
+        <div style="color:#555; font-size:14px; margin-bottom:12px;">
           Введите пароль, указанный рядом с QR-кодом в книге.
         </div>
 
-        <input id="gate-pass" type="password" inputmode="numeric" placeholder="Пароль"
-          style="width:100%; padding: 12px; border:1px solid #ccc; border-radius: 10px; font-size: 16px;">
+        <input
+          id="gate-pass"
+          type="password"
+          inputmode="numeric"
+          pattern="[0-9]*"
+          autocomplete="off"
+          autocapitalize="off"
+          autocorrect="off"
+          spellcheck="false"
+          enterkeyhint="go"
+          placeholder="Пароль"
+          style="width:100%; padding:12px; border:1px solid #ccc; border-radius:10px; font-size:16px;"
+        >
 
-        <div id="gate-err" style="display:none; color:#b00020; font-size: 13px; margin-top: 8px;">
+        <div id="gate-msg" style="margin-top:8px; font-size:13px; color:#555;"></div>
+
+        <div id="gate-err" style="display:none; color:#b00020; font-size:13px; margin-top:8px;">
           Неверный пароль
         </div>
 
         <button id="gate-btn"
-          style="margin-top: 12px; width:100%; padding: 12px; border:0; border-radius: 10px;
-          background:#2b6cff; color:#fff; font-weight:600; font-size: 16px; cursor:pointer;">
+          style="margin-top:12px; width:100%; padding:12px; border:0; border-radius:10px;
+          background:#2b6cff; color:#fff; font-weight:600; font-size:16px; cursor:pointer;">
           Войти
         </button>
+
+        <div style="margin-top:10px; font-size:12px; color:#777;">
+          Пароль сохраняется на этом устройстве.
+        </div>
       </div>
     `;
 
@@ -46,18 +111,82 @@
     const input = gate.querySelector('#gate-pass');
     const btn = gate.querySelector('#gate-btn');
     const err = gate.querySelector('#gate-err');
+    const msg = gate.querySelector('#gate-msg');
+
+    function updateStatus() {
+      const attempts = getAttempts();
+      const lockUntil2 = getLockUntil();
+      const locked2 = lockUntil2 > nowMs();
+
+      if (locked2) {
+        const remain = lockUntil2 - nowMs();
+        msg.textContent = `Слишком много попыток. Повторите через ${formatRemaining(remain)}.`;
+        msg.style.color = '#b00020';
+        btn.disabled = true;
+        btn.style.opacity = '0.6';
+        input.disabled = true;
+        input.style.opacity = '0.6';
+        err.style.display = 'none';
+      } else {
+        const left = Math.max(MAX_ATTEMPTS - attempts, 0);
+        msg.textContent = `Осталось попыток: ${left}`;
+        msg.style.color = '#555';
+        btn.disabled = false;
+        btn.style.opacity = '1';
+        input.disabled = false;
+        input.style.opacity = '1';
+      }
+    }
+
+    function lockIfNeeded(attempts) {
+      if (attempts >= MAX_ATTEMPTS) {
+        const until = nowMs() + LOCK_MINUTES * 60 * 1000;
+        setLockUntil(until);
+      }
+    }
 
     function submit() {
+      // если заблокировано — просто обновим статус
+      if (getLockUntil() > nowMs()) {
+        updateStatus();
+        return;
+      }
+
       const val = (input.value || '').trim();
-      if (val === BOOK_PASSWORD) {
-        sessionStorage.setItem(SESSION_KEY, '1');
+
+      if (val === REQUIRED_PASSWORD) {
+        localStorage.setItem(AUTH_KEY, '1');
+        clearAttemptsAndLock();
         gate.remove();
       } else {
+        const attempts = getAttempts() + 1;
+        setAttempts(attempts);
+        lockIfNeeded(attempts);
+
         err.style.display = 'block';
         input.focus();
         input.select();
+        updateStatus();
       }
     }
+
+    // Первая отрисовка
+    updateStatus();
+
+    // Таймер, чтобы обновлять обратный отсчёт при блокировке
+    let timer = null;
+    function startTimer() {
+      if (timer) clearInterval(timer);
+      timer = setInterval(() => {
+        if (!document.body.contains(gate)) { clearInterval(timer); return; }
+        updateStatus();
+        if (getLockUntil() <= nowMs()) {
+          clearInterval(timer);
+          timer = null;
+        }
+      }, 500);
+    }
+    if (locked) startTimer();
 
     btn.addEventListener('click', submit);
     input.addEventListener('keydown', (e) => {
@@ -67,9 +196,6 @@
     input.focus();
     return false;
   }
-
-  // ВАЖНО: останавливаем инициализацию, пока пароль не введён
-  if (!showPasswordGate()) return;
 
   const audio = document.getElementById('audio-player');
 
@@ -283,6 +409,10 @@
         const album = data.album || {};
         const tracks = Array.isArray(data.tracks) ? data.tracks : [];
 
+        REQUIRED_PASSWORD = album.password || null;
+
+        if (!showPasswordGate()) return;
+          
         applyAlbumMeta(album);
 
         playlistEl.innerHTML = '';
