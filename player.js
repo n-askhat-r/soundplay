@@ -121,7 +121,7 @@
         <span class="track-number">${index + 1}</span>
         <span class="track-title">${track.title ? String(track.title) : ('Трек ' + (index + 1))}</span>
       </div>
-      <div class="track-artist">${track.artist ? ('Исполнитель: ' + String(track.artist)) : ''}</div>
+      <div class="track-artist">${track.artist ? ('Орындаушы: ' + String(track.artist)) : ''}</div>
     `;
 
     li.addEventListener('click', () => loadTrack(index, true));
