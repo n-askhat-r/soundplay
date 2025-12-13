@@ -3,7 +3,8 @@
     "title": "Аралдың ақмаралы",
     "author": "Өтеген Спанов",
     "description": "Менің сүйікті әндерім",
-    "cover": "album-cover.jpg"
+    "cover": "album-cover.jpg",
+    "password": "1234"
   },
   "tracks": [
     {
