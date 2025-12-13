@@ -1,4 +1,76 @@
 (function () {
+    // ===== Парольный экран (простая защита) =====
+  const BOOK_PASSWORD = '1234'; // <-- пароль из книги
+  const SESSION_KEY = 'songbook_authed_' + location.pathname;
+
+  function showPasswordGate() {
+    // если уже вводили пароль в этой вкладке/сессии — пропускаем
+    if (sessionStorage.getItem(SESSION_KEY) === '1') return true;
+
+    // создаём простой оверлей
+    const gate = document.createElement('div');
+    gate.style.cssText = `
+      position: fixed; inset: 0; z-index: 99999;
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(0,0,0,.65); padding: 16px;
+    `;
+
+    gate.innerHTML = `
+      <div style="
+        width: 100%; max-width: 420px; background: #fff; border-radius: 14px;
+        padding: 16px; box-shadow: 0 10px 30px rgba(0,0,0,.35);
+        font-family: system-ui, -apple-system, Segoe UI, sans-serif;
+      ">
+        <div style="font-weight: 700; font-size: 18px; margin-bottom: 8px;">Доступ по паролю</div>
+        <div style="color:#555; font-size: 14px; margin-bottom: 12px;">
+          Введите пароль, указанный рядом с QR-кодом в книге.
+        </div>
+
+        <input id="gate-pass" type="password" inputmode="numeric" placeholder="Пароль"
+          style="width:100%; padding: 12px; border:1px solid #ccc; border-radius: 10px; font-size: 16px;">
+
+        <div id="gate-err" style="display:none; color:#b00020; font-size: 13px; margin-top: 8px;">
+          Неверный пароль
+        </div>
+
+        <button id="gate-btn"
+          style="margin-top: 12px; width:100%; padding: 12px; border:0; border-radius: 10px;
+          background:#2b6cff; color:#fff; font-weight:600; font-size: 16px; cursor:pointer;">
+          Войти
+        </button>
+      </div>
+    `;
+
+    document.body.appendChild(gate);
+
+    const input = gate.querySelector('#gate-pass');
+    const btn = gate.querySelector('#gate-btn');
+    const err = gate.querySelector('#gate-err');
+
+    function submit() {
+      const val = (input.value || '').trim();
+      if (val === BOOK_PASSWORD) {
+        sessionStorage.setItem(SESSION_KEY, '1');
+        gate.remove();
+      } else {
+        err.style.display = 'block';
+        input.focus();
+        input.select();
+      }
+    }
+
+    btn.addEventListener('click', submit);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') submit();
+    });
+
+    input.focus();
+    return false;
+  }
+
+  // ВАЖНО: останавливаем инициализацию, пока пароль не введён
+  if (!showPasswordGate()) return;
+
   const audio = document.getElementById('audio-player');
 
   const nowPlayingTitle = document.getElementById('now-playing-title');
