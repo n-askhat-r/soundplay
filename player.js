@@ -134,7 +134,7 @@
     const artist = li.dataset.artist || '';
 
     if (nowPlayingTitle) nowPlayingTitle.textContent = title;
-    if (nowPlayingArtist) nowPlayingArtist.textContent = artist ? ('Исполнитель: ' + artist) : '';
+    if (nowPlayingArtist) nowPlayingArtist.textContent = artist ? ('Орындаушы: ' + artist) : '';
   }
 
   function loadTrack(index, autoplay) {
@@ -258,9 +258,9 @@
         box-shadow: 0 10px 30px rgba(0,0,0,.35);
         font-family: system-ui, -apple-system, Segoe UI, sans-serif;
       ">
-        <div style="font-weight:700; font-size:18px; margin-bottom:8px;">Доступ по паролю</div>
+        <div style="font-weight:700; font-size:18px; margin-bottom:8px;">Құпия сөзге кіру</div>
         <div style="color:#555; font-size:14px; margin-bottom:12px;">
-          Введите 4-значный код из книги
+          Кітаптан 4 таңбалы кодты енгізіңіз
         </div>
 
         <input
@@ -290,7 +290,7 @@
         <div id="gate-msg" style="margin-top:8px; font-size:13px; color:#555;"></div>
 
         <div id="gate-err" style="display:none; color:#b00020; font-size:13px; margin-top:6px;">
-          Неверный пароль
+          Қате құпия сөз
         </div>
 
         <button
@@ -310,7 +310,7 @@
         >Войти</button>
 
         <div style="margin-top:10px; font-size:12px; color:#777;">
-          Доступ сохранится на этом устройстве.
+          Кіру мүмкіндігі осы құрылғыда қалады.
         </div>
       </div>
     `;
@@ -330,7 +330,7 @@
 
       if (lockUntil > nowMs()) {
         const left = lockUntil - nowMs();
-        msg.textContent = `Слишком много попыток. Повторите через ${formatRemaining(left)}.`;
+        msg.textContent = `Тым көп әрекет жасалды. ${formatRemaining(left)} кейін қайталап көріңіз.`;
         msg.style.color = '#b00020';
 
         input.disabled = true;
@@ -359,7 +359,7 @@
 
       } else {
         const left = Math.max(MAX_ATTEMPTS - attempts, 0);
-        msg.textContent = `Осталось попыток: ${left}`;
+        msg.textContent = `Қалған талпыныстар: ${left}`;
         msg.style.color = '#555';
 
         input.disabled = false;
@@ -387,7 +387,7 @@
 
       // быстрый фильтр: только 4 цифры
       if (!/^\d{4}$/.test(val)) {
-        err.textContent = 'Введите 4 цифры';
+        err.textContent = '4 санды енгізіңіз';
         err.style.display = 'block';
         input.focus();
         input.select();
@@ -402,7 +402,7 @@
         const attempts = getAttempts() + 1;
         setAttempts(attempts);
 
-        err.textContent = 'Неверный пароль';
+        err.textContent = 'Қате құпия сөз';
         err.style.display = 'block';
 
         if (attempts >= MAX_ATTEMPTS) {
@@ -495,8 +495,8 @@
       })
       .catch((err) => {
         console.error(err);
-        if (albumDescEl) albumDescEl.textContent = 'Ошибка загрузки данных альбома.';
-        if (nowPlayingTitle) nowPlayingTitle.textContent = 'Ошибка';
+        if (albumDescEl) albumDescEl.textContent = 'Альбом деректерін жүктеу қатесі.';
+        if (nowPlayingTitle) nowPlayingTitle.textContent = 'Қате';
         if (nowPlayingArtist) nowPlayingArtist.textContent = '';
         setOverlayVisible(true);
       });
