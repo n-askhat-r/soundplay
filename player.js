@@ -78,14 +78,24 @@
           id="gate-pass"
           type="password"
           inputmode="numeric"
-          pattern="[0-9]*"
+          pattern="[0-9]{4}"
+          maxlength="4"
           autocomplete="off"
           autocapitalize="off"
           autocorrect="off"
           spellcheck="false"
           enterkeyhint="go"
           placeholder="Пароль"
-          style="width:100%; padding:12px; border:1px solid #ccc; border-radius:10px; font-size:16px;"
+          style="
+            width: 100%;
+            box-sizing: border-box;
+            padding: 12px;
+            border: 1px solid #ccc;
+            border-radius: 10px;
+            font-size: 18px;
+            text-align: center;
+            letter-spacing: 6px;
+          "
         >
 
         <div id="gate-msg" style="margin-top:8px; font-size:13px; color:#555;"></div>
