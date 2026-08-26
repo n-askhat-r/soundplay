@@ -205,6 +205,21 @@
 
 
   // ---------- MEDIA SESSION API ----------
+  // Safari/iOS поддерживает Media Session не полностью. Поэтому метаданные
+  // обновляются несколько раз: при выборе трека, после загрузки metadata,
+  // при canplay и непосредственно после пользовательского Play.
+  const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+  function absoluteUrl(src) {
+    if (!src) return null;
+    try {
+      return new URL(String(src), document.baseURI).href;
+    } catch (e) {
+      return String(src);
+    }
+  }
+
   function getArtworkType(src) {
     const clean = String(src || '').split('?')[0].toLowerCase();
     if (clean.endsWith('.png')) return 'image/png';
@@ -212,13 +227,28 @@
     return 'image/jpeg';
   }
 
-  function getArtworkUrl() {
-    if (!currentAlbum || !currentAlbum.cover) return null;
-    try {
-      return new URL(String(currentAlbum.cover), document.baseURI).href;
-    } catch (e) {
-      return String(currentAlbum.cover);
+  function getMediaArtwork() {
+    const artwork = [];
+    const cover = currentAlbum && currentAlbum.cover ? absoluteUrl(currentAlbum.cover) : null;
+
+    // Основная обложка альбома. Для iOS важно использовать абсолютный HTTPS URL.
+    if (cover) {
+      artwork.push({
+        src: cover,
+        sizes: '512x512',
+        type: getArtworkType(cover)
+      });
     }
+
+    // Fallback-иконки особенно полезны для Safari/iOS, если обложка не была
+    // принята WebKit для системного экрана Now Playing.
+    const icon192 = absoluteUrl('icon-192.png');
+    const icon512 = absoluteUrl('icon-512.png');
+
+    if (icon192) artwork.push({ src: icon192, sizes: '192x192', type: 'image/png' });
+    if (icon512) artwork.push({ src: icon512, sizes: '512x512', type: 'image/png' });
+
+    return artwork;
   }
 
   function updateMediaSessionMetadata() {
@@ -229,23 +259,13 @@
     const titleEl = li.querySelector('.track-title');
     const title = titleEl ? titleEl.textContent.trim() : 'Трек';
     const artist = li.dataset.artist || '';
-    const artworkUrl = getArtworkUrl();
 
     const metadata = {
       title,
       artist,
-      album: currentAlbum && currentAlbum.title ? String(currentAlbum.title) : ''
+      album: currentAlbum && currentAlbum.title ? String(currentAlbum.title) : '',
+      artwork: getMediaArtwork()
     };
-
-    if (artworkUrl) {
-      metadata.artwork = [
-        {
-          src: artworkUrl,
-          sizes: '512x512',
-          type: getArtworkType(artworkUrl)
-        }
-      ];
-    }
 
     try {
       navigator.mediaSession.metadata = new MediaMetadata(metadata);
@@ -254,16 +274,35 @@
     }
   }
 
+  function refreshMediaSessionForIOS() {
+    updateMediaSessionMetadata();
+    updateMediaSessionPosition();
+
+    // WebKit иногда формирует Now Playing только после фактического play.
+    // Повторные обновления помогают iOS получить metadata/artwork без влияния
+    // на Android и другие браузеры.
+    if (IS_IOS) {
+      setTimeout(updateMediaSessionMetadata, 120);
+      setTimeout(updateMediaSessionMetadata, 500);
+      setTimeout(updateMediaSessionPosition, 550);
+    }
+  }
+
   function updateMediaSessionPosition() {
     if (!('mediaSession' in navigator)) return;
     if (typeof navigator.mediaSession.setPositionState !== 'function') return;
     if (!isFinite(audio.duration) || audio.duration <= 0) return;
 
+    const position = Math.min(
+      Math.max(Number(audio.currentTime) || 0, 0),
+      Math.max(audio.duration - 0.001, 0)
+    );
+
     try {
       navigator.mediaSession.setPositionState({
         duration: audio.duration,
         playbackRate: audio.playbackRate || 1,
-        position: Math.min(Math.max(audio.currentTime || 0, 0), audio.duration)
+        position
       });
     } catch (e) {}
   }
@@ -271,7 +310,6 @@
   function playPreviousTrack() {
     if (!playlistItems.length) return;
 
-    // Если текущий трек уже проигран больше 3 секунд — сначала в начало.
     if (audio.currentTime > 3) {
       audio.currentTime = 0;
       savePlayerState(true);
@@ -295,6 +333,8 @@
   function setupMediaSessionHandlers() {
     if (!('mediaSession' in navigator)) return;
 
+    // Не все action handlers реализованы в Safari. Каждый назначается отдельно,
+    // а неподдерживаемые просто игнорируются.
     const handlers = {
       play: () => safePlay(),
       pause: () => audio.pause(),
@@ -315,10 +355,13 @@
       },
       seekto: (details) => {
         if (!details || typeof details.seekTime !== 'number') return;
+        const target = isFinite(audio.duration)
+          ? Math.min(Math.max(details.seekTime, 0), audio.duration)
+          : Math.max(details.seekTime, 0);
         if (details.fastSeek && typeof audio.fastSeek === 'function') {
-          audio.fastSeek(details.seekTime);
+          audio.fastSeek(target);
         } else {
-          audio.currentTime = details.seekTime;
+          audio.currentTime = target;
         }
         savePlayerState(true);
         updateMediaSessionPosition();
@@ -328,9 +371,7 @@
     Object.entries(handlers).forEach(([action, handler]) => {
       try {
         navigator.mediaSession.setActionHandler(action, handler);
-      } catch (e) {
-        // Некоторые браузеры поддерживают Media Session частично.
-      }
+      } catch (e) {}
     });
   }
 
@@ -640,13 +681,20 @@
   // ---------- EVENTS ----------
   audio.addEventListener('play', () => {
     setOverlayVisible(false);
-    if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
-    updateMediaSessionMetadata();
-    updateMediaSessionPosition();
+    if ('mediaSession' in navigator) {
+      try { navigator.mediaSession.playbackState = 'playing'; } catch (e) {}
+    }
+    refreshMediaSessionForIOS();
   });
+  audio.addEventListener('playing', refreshMediaSessionForIOS);
+  audio.addEventListener('loadedmetadata', refreshMediaSessionForIOS);
+  audio.addEventListener('canplay', refreshMediaSessionForIOS);
+
   audio.addEventListener('pause', () => {
     setOverlayVisible(true);
-    if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
+    if ('mediaSession' in navigator) {
+      try { navigator.mediaSession.playbackState = 'paused'; } catch (e) {}
+    }
     savePlayerState(true);
     updateMediaSessionPosition();
   });
