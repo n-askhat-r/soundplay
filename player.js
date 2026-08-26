@@ -61,6 +61,7 @@
   let REQUIRED_PASSWORD = null; // из album.json (строка из 4 цифр)
   let playlistItems = [];
   let currentIndex = 0;
+  let currentAlbum = {};
 
   // throttle save
   let lastSaveTs = 0;
@@ -149,6 +150,8 @@
     audio.src = src;
     updateNowPlayingFromItem(li);
     setActive(index);
+    updateMediaSessionMetadata();
+    updateMediaSessionPosition();
     savePlayerState(true);
 
     if (autoplay) safePlay();
@@ -198,6 +201,137 @@
     }
 
     setOverlayVisible(audio.paused);
+  }
+
+
+  // ---------- MEDIA SESSION API ----------
+  function getArtworkType(src) {
+    const clean = String(src || '').split('?')[0].toLowerCase();
+    if (clean.endsWith('.png')) return 'image/png';
+    if (clean.endsWith('.webp')) return 'image/webp';
+    return 'image/jpeg';
+  }
+
+  function getArtworkUrl() {
+    if (!currentAlbum || !currentAlbum.cover) return null;
+    try {
+      return new URL(String(currentAlbum.cover), document.baseURI).href;
+    } catch (e) {
+      return String(currentAlbum.cover);
+    }
+  }
+
+  function updateMediaSessionMetadata() {
+    if (!('mediaSession' in navigator) || !('MediaMetadata' in window)) return;
+    if (!playlistItems.length || !playlistItems[currentIndex]) return;
+
+    const li = playlistItems[currentIndex];
+    const titleEl = li.querySelector('.track-title');
+    const title = titleEl ? titleEl.textContent.trim() : 'Трек';
+    const artist = li.dataset.artist || '';
+    const artworkUrl = getArtworkUrl();
+
+    const metadata = {
+      title,
+      artist,
+      album: currentAlbum && currentAlbum.title ? String(currentAlbum.title) : ''
+    };
+
+    if (artworkUrl) {
+      metadata.artwork = [
+        {
+          src: artworkUrl,
+          sizes: '512x512',
+          type: getArtworkType(artworkUrl)
+        }
+      ];
+    }
+
+    try {
+      navigator.mediaSession.metadata = new MediaMetadata(metadata);
+    } catch (e) {
+      console.warn('Media Session metadata error:', e);
+    }
+  }
+
+  function updateMediaSessionPosition() {
+    if (!('mediaSession' in navigator)) return;
+    if (typeof navigator.mediaSession.setPositionState !== 'function') return;
+    if (!isFinite(audio.duration) || audio.duration <= 0) return;
+
+    try {
+      navigator.mediaSession.setPositionState({
+        duration: audio.duration,
+        playbackRate: audio.playbackRate || 1,
+        position: Math.min(Math.max(audio.currentTime || 0, 0), audio.duration)
+      });
+    } catch (e) {}
+  }
+
+  function playPreviousTrack() {
+    if (!playlistItems.length) return;
+
+    // Если текущий трек уже проигран больше 3 секунд — сначала в начало.
+    if (audio.currentTime > 3) {
+      audio.currentTime = 0;
+      savePlayerState(true);
+      safePlay();
+      return;
+    }
+
+    const prev = currentIndex - 1;
+    if (prev >= 0) loadTrack(prev, true);
+    else {
+      audio.currentTime = 0;
+      safePlay();
+    }
+  }
+
+  function playNextTrack() {
+    const next = currentIndex + 1;
+    if (next < playlistItems.length) loadTrack(next, true);
+  }
+
+  function setupMediaSessionHandlers() {
+    if (!('mediaSession' in navigator)) return;
+
+    const handlers = {
+      play: () => safePlay(),
+      pause: () => audio.pause(),
+      previoustrack: () => playPreviousTrack(),
+      nexttrack: () => playNextTrack(),
+      seekbackward: (details) => {
+        const step = details && details.seekOffset ? details.seekOffset : 10;
+        audio.currentTime = Math.max((audio.currentTime || 0) - step, 0);
+        savePlayerState(true);
+        updateMediaSessionPosition();
+      },
+      seekforward: (details) => {
+        const step = details && details.seekOffset ? details.seekOffset : 10;
+        const max = isFinite(audio.duration) ? audio.duration : (audio.currentTime || 0) + step;
+        audio.currentTime = Math.min((audio.currentTime || 0) + step, max);
+        savePlayerState(true);
+        updateMediaSessionPosition();
+      },
+      seekto: (details) => {
+        if (!details || typeof details.seekTime !== 'number') return;
+        if (details.fastSeek && typeof audio.fastSeek === 'function') {
+          audio.fastSeek(details.seekTime);
+        } else {
+          audio.currentTime = details.seekTime;
+        }
+        savePlayerState(true);
+        updateMediaSessionPosition();
+      }
+    };
+
+    Object.entries(handlers).forEach(([action, handler]) => {
+      try {
+        navigator.mediaSession.setActionHandler(action, handler);
+      } catch (e) {
+        // Некоторые браузеры поддерживают Media Session частично.
+      }
+    });
   }
 
   // ---------- PASSWORD GATE ----------
@@ -444,7 +578,8 @@
 
   // ---------- INIT AFTER AUTH ----------
   function initAfterAuth(album, tracks) {
-    applyAlbumMeta(album);
+    currentAlbum = album || {};
+    applyAlbumMeta(currentAlbum);
 
     playlistEl.innerHTML = '';
     const safeTracks = Array.isArray(tracks) ? tracks : [];
@@ -503,15 +638,26 @@
   }
 
   // ---------- EVENTS ----------
-  audio.addEventListener('play', () => setOverlayVisible(false));
+  audio.addEventListener('play', () => {
+    setOverlayVisible(false);
+    if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
+    updateMediaSessionMetadata();
+    updateMediaSessionPosition();
+  });
   audio.addEventListener('pause', () => {
     setOverlayVisible(true);
+    if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
     savePlayerState(true);
+    updateMediaSessionPosition();
   });
 
   audio.addEventListener('timeupdate', () => {
     if (!audio.paused) savePlayerState(false);
+    updateMediaSessionPosition();
   });
+
+  audio.addEventListener('durationchange', updateMediaSessionPosition);
+  audio.addEventListener('ratechange', updateMediaSessionPosition);
 
   audio.addEventListener('ended', () => {
     const next = currentIndex + 1;
@@ -538,6 +684,7 @@
   // старт
   document.addEventListener('DOMContentLoaded', () => {
     setOverlayVisible(true);
+    setupMediaSessionHandlers();
     loadAlbum();
   });
 
