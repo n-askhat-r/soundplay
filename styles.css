@@ -230,7 +230,7 @@
 }
 
 /* ===== Планшеты: прокручивается только список треков ===== */
-@media (min-width: 641px) and (max-width: 1024px) {
+@media (min-width: 641px) and (max-width: 1024px) and (min-height: 420px) {
   html,
   body {
     height: 100%;
