@@ -228,25 +228,20 @@
   }
 
   function getMediaArtwork() {
-    const artwork = [];
+    // На iOS/WebKit первым ставим PNG точного размера. Некоторые версии
+    // WebKit исторически использовали именно первый элемент artwork.
+    const artwork512 = absoluteUrl('media-artwork-512.png?v=2');
+    const artwork256 = absoluteUrl('media-artwork-256.png?v=2');
+    const artwork192 = absoluteUrl('media-artwork-192.png?v=2');
     const cover = currentAlbum && currentAlbum.cover ? absoluteUrl(currentAlbum.cover) : null;
 
-    // Основная обложка альбома. Для iOS важно использовать абсолютный HTTPS URL.
-    if (cover) {
-      artwork.push({
-        src: cover,
-        sizes: '512x512',
-        type: getArtworkType(cover)
-      });
-    }
+    const artwork = [];
+    if (artwork512) artwork.push({ src: artwork512, sizes: '512x512', type: 'image/png' });
+    if (artwork256) artwork.push({ src: artwork256, sizes: '256x256', type: 'image/png' });
+    if (artwork192) artwork.push({ src: artwork192, sizes: '192x192', type: 'image/png' });
 
-    // Fallback-иконки особенно полезны для Safari/iOS, если обложка не была
-    // принята WebKit для системного экрана Now Playing.
-    const icon192 = absoluteUrl('icon-192.png');
-    const icon512 = absoluteUrl('icon-512.png');
-
-    if (icon192) artwork.push({ src: icon192, sizes: '192x192', type: 'image/png' });
-    if (icon512) artwork.push({ src: icon512, sizes: '512x512', type: 'image/png' });
+    // Оригинальную обложку оставляем последним fallback без ложного sizes.
+    if (cover) artwork.push({ src: cover, type: getArtworkType(cover) });
 
     return artwork;
   }
@@ -340,19 +335,6 @@
       pause: () => audio.pause(),
       previoustrack: () => playPreviousTrack(),
       nexttrack: () => playNextTrack(),
-      seekbackward: (details) => {
-        const step = details && details.seekOffset ? details.seekOffset : 10;
-        audio.currentTime = Math.max((audio.currentTime || 0) - step, 0);
-        savePlayerState(true);
-        updateMediaSessionPosition();
-      },
-      seekforward: (details) => {
-        const step = details && details.seekOffset ? details.seekOffset : 10;
-        const max = isFinite(audio.duration) ? audio.duration : (audio.currentTime || 0) + step;
-        audio.currentTime = Math.min((audio.currentTime || 0) + step, max);
-        savePlayerState(true);
-        updateMediaSessionPosition();
-      },
       seekto: (details) => {
         if (!details || typeof details.seekTime !== 'number') return;
         const target = isFinite(audio.duration)
@@ -367,6 +349,26 @@
         updateMediaSessionPosition();
       }
     };
+
+    // На iPhone/iPad не регистрируем seekbackward/seekforward: iOS может
+    // предпочесть системные кнопки перемотки вместо Previous/Next.
+    // На Android оставляем полный набор команд.
+    if (!IS_IOS) {
+      handlers.seekbackward = (details) => {
+        const step = details && details.seekOffset ? details.seekOffset : 10;
+        audio.currentTime = Math.max((audio.currentTime || 0) - step, 0);
+        savePlayerState(true);
+        updateMediaSessionPosition();
+      };
+
+      handlers.seekforward = (details) => {
+        const step = details && details.seekOffset ? details.seekOffset : 10;
+        const max = isFinite(audio.duration) ? audio.duration : (audio.currentTime || 0) + step;
+        audio.currentTime = Math.min((audio.currentTime || 0) + step, max);
+        savePlayerState(true);
+        updateMediaSessionPosition();
+      };
+    }
 
     Object.entries(handlers).forEach(([action, handler]) => {
       try {
@@ -684,6 +686,7 @@
     if ('mediaSession' in navigator) {
       try { navigator.mediaSession.playbackState = 'playing'; } catch (e) {}
     }
+    setupMediaSessionHandlers();
     refreshMediaSessionForIOS();
   });
   audio.addEventListener('playing', refreshMediaSessionForIOS);
