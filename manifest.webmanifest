@@ -1,7 +1,7 @@
 {
   "id": "./",
-  "name": "SoundPlay",
-  "short_name": "SoundPlay",
+  "name": "NAR SoundPlay - Аралдың ақмаралы",
+  "short_name": "Аралдың ақмаралы",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
