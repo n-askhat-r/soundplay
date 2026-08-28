@@ -229,8 +229,9 @@
   transform: scale(1.18);
 }
 
-/* ===== Планшеты и компьютеры: при высоте окна < 450px прокручивается только список треков ===== */
-@media (min-width: 641px) and (max-height: 449px) {
+/* ===== Планшеты и компьютеры: при высоте окна >= 450px прокручивается только список треков.
+   При высоте < 450px это правило не применяется, поэтому прокручивается вся страница. ===== */
+@media (min-width: 641px) and (min-height: 450px) {
   html,
   body {
     height: 100%;
@@ -243,7 +244,6 @@
 
   .album-container {
     box-sizing: border-box;
-    height: calc(100vh - 40px);
     max-height: calc(100vh - 40px);
     display: flex;
     flex-direction: column;
